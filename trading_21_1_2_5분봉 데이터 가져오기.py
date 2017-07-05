@@ -4,6 +4,9 @@ from PyQt5.QAxContainer import *
 from PyQt5.QtCore import *
 import time
 import datetime
+import pandas as pd
+import sqlite3
+
 
 TR_REQ_TIME_INTERVAL = 0.2
 
@@ -112,10 +115,41 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     kiwoom = Kiwoom()
     kiwoom.comm_connect()
+    today = time.strftime("%Y%m%d %H:%M:%S")
+
 
     # 코스닥 종목 리스트 받아오기
     code_list = kiwoom.get_code_list_by_market('10')
     codeName_list = []
+    for code in code_list:
+        # print (code, end=" ")
+        print (code)
+        codeName = kiwoom.get_master_code_name(code)
+        codeName_list.append(codeName)
+
+    stock_code_list = {'code': code_list, 'name': codeName_list, 'market': '10', 'ins_date': today }
+    stock_code_df = pd.DataFrame.from_dict(stock_code_list)
+    # print (stock_code_df)
+
+    con = sqlite3.connect("E:\workspace\pycharm\pythonTrading\db\SysTrade.db")
+    stock_code_df = stock_code_df[['code', 'name', 'market', 'ins_date']]
+    stock_code_df.to_sql('stock_code', con, if_exists='replace', index=False)
+
+    # 코스피 종목 정보 가져오기
+    codeName_list = []
+    stock_code_kospi = kiwoom.get_code_list_by_market('0')
+    for code in stock_code_kospi:
+        codeName = kiwoom.get_master_code_name(code)
+        codeName_list.append(codeName)
+    stock_code_kospi_dic = {'code': stock_code_kospi, 'name': codeName_list, 'market': '0', 'ins_date': today}
+    stock_code_kospi_df = pd.DataFrame.from_dict(stock_code_kospi_dic)
+
+    print (stock_code_kospi_df)
+    stock_code_kospi_df.to_sql('stock_code', con, if_exists='append', index=False)
+    exit()
+
+
+
     for code in code_list:
         codeName = kiwoom.get_master_code_name(code)
         print("======" + code + ':' + codeName + '==============')
