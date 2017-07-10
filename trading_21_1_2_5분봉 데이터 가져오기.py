@@ -8,13 +8,24 @@ import pandas as pd
 import sqlite3
 
 
-TR_REQ_TIME_INTERVAL = 0.2
+TR_REQ_TIME_INTERVAL = 0.4
 
 class Kiwoom(QAxWidget):
+
+    종목코드 = []
+    종목명 = []
+    일시 = []
+    현재가 = []
+    거래량 = []
+    거래대금 = []
+
     def __init__(self):
         super().__init__()
         self._create_kiwoom_instance()
         self._set_signal_slots()
+        self.stockItem = ''
+        self.stockItemName = ''
+
 
     def _create_kiwoom_instance(self):
         self.setControl("KHOPENAPI.KHOpenAPICtrl.1")
@@ -91,12 +102,20 @@ class Kiwoom(QAxWidget):
             volume = abs(int(self._comm_get_data(trcode, "", rqname, i, "거래량")))
             totalprice = (high + low) / 2 * volume
             # 2017 06 29 09 05 00
-            time = datetime.datetime(int(date[0:4]), int(date[4:6]), int(date[6:8]))
-            today = datetime.datetime(2017, 7, 3)
+            time = datetime.datetime(int(date[0:4]), int(date[4:6]), int(date[6:8]), int(date[8:10]), int(date[10:12]))
+            today = datetime.datetime(2017, 7, 10)
 
             # preday_close = self._comm_get_data(trcode, "", rqname, i, "전일종가")
             if totalprice > 1000000000 and time >= today:
+                print(self.stockItem, self.stockItemName, time)
                 print(date, open, high, low, close, volume, totalprice)
+                self.종목코드.append(self.stockItem)
+                self.종목명.append(self.stockItemName)
+                self.일시.append(date[0:12])
+                self.현재가.append(close)
+                self.거래량.append(volume)
+                self.거래대금.append(totalprice / 100000000)
+
 
     def _opt10081(self, rqname, trcode):
         data_cnt = self._get_repeat_cnt(trcode, rqname)
@@ -117,46 +136,36 @@ if __name__ == "__main__":
     kiwoom.comm_connect()
     today = time.strftime("%Y%m%d %H:%M:%S")
 
-
-    # 코스닥 종목 리스트 받아오기
-    code_list = kiwoom.get_code_list_by_market('10')
-    codeName_list = []
-    for code in code_list:
-        # print (code, end=" ")
-        print (code)
-        codeName = kiwoom.get_master_code_name(code)
-        codeName_list.append(codeName)
-
-    stock_code_list = {'code': code_list, 'name': codeName_list, 'market': '10', 'ins_date': today }
-    stock_code_df = pd.DataFrame.from_dict(stock_code_list)
-    # print (stock_code_df)
-
     con = sqlite3.connect("E:\workspace\pycharm\pythonTrading\db\SysTrade.db")
-    stock_code_df = stock_code_df[['code', 'name', 'market', 'ins_date']]
-    stock_code_df.to_sql('stock_code', con, if_exists='replace', index=False)
 
-    # 코스피 종목 정보 가져오기
-    codeName_list = []
-    stock_code_kospi = kiwoom.get_code_list_by_market('0')
-    for code in stock_code_kospi:
-        codeName = kiwoom.get_master_code_name(code)
-        codeName_list.append(codeName)
-    stock_code_kospi_dic = {'code': stock_code_kospi, 'name': codeName_list, 'market': '0', 'ins_date': today}
-    stock_code_kospi_df = pd.DataFrame.from_dict(stock_code_kospi_dic)
+    cur = con.cursor()
 
-    print (stock_code_kospi_df)
-    stock_code_kospi_df.to_sql('stock_code', con, if_exists='append', index=False)
+    cur.execute("select * from stock_basic_info where 관심 = 'Y' order by 종목코드")
+
+    rows = cur.fetchall()
+
+    cnt = 0
+    start = 1800
+    num = 300
+    for row in rows:
+        cnt += 1
+        if ( cnt >= start and cnt < (start + num)):
+            print (str(cnt), ': ', str(row))
+            # 주식 분봉차트 조회 요청: opt10080
+            kiwoom.stockItem = row[0]
+            kiwoom.stockItemName = row[1]
+            kiwoom.set_input_value("종목코드", row[0])
+            kiwoom.set_input_value("틱범위", "5")
+            kiwoom.set_input_value("수정주가구분", 1)
+            kiwoom.comm_rq_data("opt10080_req", "opt10080", 0, "0101")
+            time.sleep(TR_REQ_TIME_INTERVAL)
+
+
+    stock_event_dict = {'종목코드': kiwoom.종목코드, '종목명':kiwoom.종목명, '일시':kiwoom.일시,
+            '현재가': kiwoom.현재가, '거래량':kiwoom.거래량, '거래대금': kiwoom.거래대금 }
+
+    stock_event_df = pd.DataFrame.from_dict(stock_event_dict)
+    stock_event_df = stock_event_df[['종목코드', '종목명', '일시', '현재가', '거래량', '거래대금']]
+
+    stock_event_df.to_sql('stock_event_info', con, if_exists='append', index=False)
     exit()
-
-
-
-    for code in code_list:
-        codeName = kiwoom.get_master_code_name(code)
-        print("======" + code + ':' + codeName + '==============')
-
-        # 주식 분봉차트 조회 요청: opt10080
-        kiwoom.set_input_value("종목코드", code)
-        kiwoom.set_input_value("틱범위", "5")
-        kiwoom.set_input_value("수정주가구분", 1)
-        kiwoom.comm_rq_data("opt10080_req", "opt10080", 0, "0101")
-        time.sleep(TR_REQ_TIME_INTERVAL)
